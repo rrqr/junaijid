@@ -1,6 +1,8 @@
 
 import requests
 import telebot
+import threading
+import time
 
 # رمز الوصول للبوت
 TOKEN = '7761188365:AAGl-tdVAuMNfkgfWEgNovKHNXEqT3-Bsic'
@@ -10,10 +12,19 @@ bot = telebot.TeleBot(TOKEN)
 API_KEY = 'a2b67d7e2c37ee2f5946bb639c08f0c0dcb287dc'
 
 # قائمة معرفات المستخدمين المصرح لهم
-authorized_users = set()  # نستخدم مجموعة لتسهيل عمليات الإضافة والإزالة
+authorized_users = set()
 
-# معرف المالك (يمكن تغييره إلى معرف المالك الحقيقي)
+# معرف المالك
 OWNER_ID = 6358035274
+
+def send_keepalive_signal():
+    while True:
+        try:
+            # يمكنك تعديل هذه الدالة لإرسال إشارة أو رسالة بناءً على متطلباتك
+            bot.send_message(OWNER_ID, "Keepalive signal")
+        except Exception as e:
+            print(f"Error sending keepalive signal: {e}")
+        time.sleep(300)  # انتظر 5 دقائق (300 ثانية) قبل إرسال الإشارة التالية
 
 @bot.message_handler(commands=['add_user'])
 def add_user(message):
@@ -46,21 +57,18 @@ def handle_allD_command(message):
     if message.from_user.id in authorized_users or message.from_user.id == OWNER_ID:
         try:
             parts = message.text.split()
-            query = parts[1]  # البريد الإلكتروني أو اسم المستخدم
+            query = parts[1]
         except IndexError:
             bot.reply_to(message, "يرجى إدخال البريد الإلكتروني أو اسم المستخدم بعد الأمر.")
             return
 
-        # إعداد الرؤوس للطلب
         headers = {
             'Accept': 'application/json',
             'X-API-Key': API_KEY
         }
 
-        # إرسال طلب إلى LeakCheck API
         response = requests.get(f'https://leakcheck.io/api/v2/query/{query}', headers=headers)
 
-        # التحقق من حالة الاستجابة ومعالجة البيانات
         if response.status_code == 200:
             try:
                 data = response.json()
@@ -68,13 +76,11 @@ def handle_allD_command(message):
                     reply_message = f"🔍 نتائج البحث عن: {query}\n\n"
                     
                     for result in data['result']:
-                        source = result.get('source', {})
-                        source_name = source.get('name', 'Unknown')
-                        breach_date = source.get('breach_date', 'None')
+                        source_name = result.get('source', {}).get('name', 'Unknown')
+                        breach_date = result.get('source', {}).get('breach_date', 'None')
                         ip_address = result.get('ip', 'N/A')
                         origin = result.get('origin', 'N/A')
 
-                        # إعداد الرسالة مع جميع الحقول الممكنة
                         result_message = (
                             f"📛 المصدر: {source_name}\n"
                             f"📅 تاريخ التسريب: {breach_date}\n"
@@ -90,7 +96,7 @@ def handle_allD_command(message):
                             f"📦 الرمز البريدي: {result.get('zip', 'N/A')}\n"
                             f"📞 الهاتف: {result.get('phone', 'N/A')}\n"
                             f"📝 الاسم: {result.get('name', 'N/A')}\n"
-                            "-----------------------------------\n\n"  # فاصلة بين التسريبات
+                            "-----------------------------------\n\n"
                         )
                         reply_message += result_message
                     
@@ -100,7 +106,6 @@ def handle_allD_command(message):
             except ValueError:
                 bot.reply_to(message, "Received a non-JSON response.")
         else:
-            # معالجة الأخطاء بناءً على رموز الحالة
             if response.status_code == 401:
                 bot.reply_to(message, "Missing or invalid X-API-Key. Please check your API key.")
             elif response.status_code == 400:
@@ -115,6 +120,11 @@ def handle_allD_command(message):
                 bot.reply_to(message, f"Failed to connect to LeakCheck. Status code: {response.status_code}")
     else:
         bot.reply_to(message, "You are not authorized to perform this action.")
+
+# بدء تشغيل مؤشر الإبقاء على الاتصال
+keepalive_thread = threading.Thread(target=send_keepalive_signal)
+keepalive_thread.daemon = True
+keepalive_thread.start()
 
 # بدء تشغيل البوت باستخدام polling
 bot.polling()
